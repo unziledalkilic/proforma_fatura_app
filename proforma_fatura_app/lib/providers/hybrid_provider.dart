@@ -11,6 +11,7 @@ import '../models/invoice.dart';
 import '../models/company_info.dart';
 import '../utils/id_converter.dart';
 import '../utils/text_formatter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Hybrid Provider - SQLite (offline) + Firebase (online) desteği
 class HybridProvider extends ChangeNotifier {
@@ -195,6 +196,11 @@ class HybridProvider extends ChangeNotifier {
     _setLoading(true);
     try {
       await _firebaseService.logoutUser();
+      
+      // Clear remember me preference
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('remember_me');
+
       _clearData();
       _setError(null);
     } catch (e) {

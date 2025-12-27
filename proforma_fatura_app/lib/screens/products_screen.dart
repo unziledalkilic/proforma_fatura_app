@@ -21,7 +21,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   final TextEditingController _searchController = TextEditingController();
   List<dynamic> _filteredProducts = [];
   String? _selectedCategoryFilter;
-  bool _showAllProducts = false; // Geçici olarak tüm ürünleri göster
+  final bool _showAllProducts = false; // Geçici olarak tüm ürünleri göster
 
   @override
   void initState() {

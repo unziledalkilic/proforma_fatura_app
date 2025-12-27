@@ -10,7 +10,6 @@ import '../models/product.dart';
 import '../models/invoice.dart';
 import '../models/invoice_item.dart';
 import '../models/company_info.dart';
-import '../utils/id_converter.dart';
 
 class FirebaseService {
   static final FirebaseService _instance = FirebaseService._internal();

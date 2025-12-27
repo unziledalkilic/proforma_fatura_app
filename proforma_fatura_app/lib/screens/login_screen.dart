@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/app_constants.dart';
 import '../providers/hybrid_provider.dart';
 import '../utils/text_formatter.dart';
-// import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -17,6 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+  bool _rememberMe = false;
 
   @override
   void initState() {
@@ -47,6 +48,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (success && mounted) {
       debugPrint('Login successful, navigating to home screen');
+      
+      // Save Remember Me preference
+      final prefs = await SharedPreferences.getInstance();
+      if (_rememberMe) {
+        await prefs.setBool('remember_me', true);
+      } else {
+        await prefs.remove('remember_me');
+      }
+
       // Navigate to home screen after successful login
       Navigator.of(context).pushReplacementNamed('/home');
     } else if (mounted) {
@@ -208,6 +218,22 @@ class _LoginScreenState extends State<LoginScreen> {
                       );
                     },
                   ),
+                  const SizedBox(height: 16),
+                  
+                  // Beni Hatırla Checkbox
+                  CheckboxListTile(
+                    title: const Text('Beni Hatırla'),
+                    value: _rememberMe,
+                    onChanged: (newValue) {
+                      setState(() {
+                        _rememberMe = newValue ?? false;
+                      });
+                    },
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    activeColor: AppConstants.primaryColor,
+                  ),
+
                   const SizedBox(height: 24),
 
                   // Kayıt ol linki

@@ -9,7 +9,6 @@ import '../providers/hybrid_provider.dart';
 import '../utils/text_formatter.dart';
 import 'pdf_preview_screen.dart';
 import '../widgets/company_logo_avatar.dart';
-import '../widgets/invoice_terms_list.dart';
 
 // ✅ Eklendi: DB erişimi için
 import '../services/hybrid_database_service.dart';

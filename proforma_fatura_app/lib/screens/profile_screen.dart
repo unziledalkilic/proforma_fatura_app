@@ -4,7 +4,6 @@ import '../constants/app_constants.dart';
 import '../providers/hybrid_provider.dart';
 import '../models/user.dart';
 import '../utils/text_formatter.dart';
-import 'login_screen.dart';
 import 'company_management_screen.dart';
 import '../widgets/company_logo_avatar.dart';
 
@@ -25,7 +24,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    debugPrint('ProfileScreen initState - minimal initialization');
+    debugPrint('ProfileScreen initState - auto-updating profiles');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<HybridProvider>().loadCompanyProfiles();
+    });
   }
 
   @override
@@ -277,9 +279,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Ana başlık - Şirket yönetimi odaklı
+                  // Ana başlık - Şirket yönetimi odaklı (Daha ince)
                   Container(
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
@@ -293,38 +295,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         AppConstants.borderRadius,
                       ),
                     ),
-                    child: Column(
+                    child: Row( // Column yerine Row kullanıldı
                       children: [
                         Icon(
                           Icons.business_center,
-                          size: 48,
+                          size: 32, // Küçültüldü
                           color: AppConstants.textOnPrimary,
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Şirket Yönetimi',
-                          style: AppConstants.headingStyle.copyWith(
-                            color: AppConstants.textOnPrimary,
-                            fontSize: 24,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Builder(
-                          builder: (_) {
-                            final hp = context.read<HybridProvider>();
-                            debugPrint(
-                              '👤 Profile header appUser: ${hp.appUser?.fullName} / ${hp.appUser?.phone}',
-                            );
-                            return Text(
-                              'Şirketlerinizi yönetin ve faturalarınızda kullanın',
-                              style: AppConstants.captionStyle.copyWith(
-                                color: AppConstants.textOnPrimary.withOpacity(
-                                  0.9,
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Şirket Yönetimi',
+                                style: AppConstants.headingStyle.copyWith(
+                                  color: AppConstants.textOnPrimary,
+                                  fontSize: 20, // Küçültüldü
                                 ),
                               ),
-                              textAlign: TextAlign.center,
-                            );
-                          },
+                              Text(
+                                'Şirketlerinizi yönetin ve faturalarınızda kullanın',
+                                style: AppConstants.captionStyle.copyWith(
+                                  color: AppConstants.textOnPrimary.withOpacity(0.9),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -381,224 +378,138 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   );
                                 }
 
-                                return Container(
-                                  padding: const EdgeInsets.all(16.0),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            'Aktif Şirket Profili',
-                                            style: AppConstants.subheadingStyle
-                                                .copyWith(
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                          ),
-                                          TextButton.icon(
-                                            onPressed: () {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (context) =>
-                                                      const CompanyManagementScreen(),
-                                                ),
-                                              );
-                                            },
-                                            icon: const Icon(Icons.settings),
-                                            label: const Text('Yönet'),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 12),
-
-                                      // Safe empty state - no complex widgets
-                                      if (companies.isEmpty)
-                                        Container(
-                                          padding: const EdgeInsets.all(20),
-                                          child: Column(
-                                            children: [
-                                              const Icon(
-                                                Icons.business_outlined,
-                                                size: 40,
-                                                color: Colors.grey,
-                                              ),
-                                              const SizedBox(height: 8),
-                                              const Text(
-                                                'Henüz şirket kaydınız yok',
-                                                style: TextStyle(
-                                                  color: Colors.grey,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              ElevatedButton(
-                                                onPressed: () {
-                                                  try {
-                                                    Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder: (context) =>
-                                                            const AddCompanyScreen(),
-                                                      ),
-                                                    );
-                                                  } catch (e) {
-                                                    debugPrint(
-                                                      'Navigation error: $e',
-                                                    );
-                                                  }
-                                                },
-                                                child: const Text(
-                                                  'Şirket Ekle',
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        )
-                                      else
-                                        Column(
+                                      return Container(
+                                        padding: const EdgeInsets.all(16.0),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
-                                            // Basit aktif şirket gösterimi
-                                            Container(
-                                              width: double.infinity,
-                                              padding: const EdgeInsets.all(16),
-                                              decoration: BoxDecoration(
-                                                border: Border.all(
-                                                  color:
-                                                      AppConstants.primaryColor,
+                                            // Üstteki "Aktif Şirket Profili" başlığı ve butonu kaldırıldı
+
+                                            // Safe empty state - no complex widgets
+                                            if (companies.isEmpty)
+                                              Container(
+                                                padding: const EdgeInsets.all(20),
+                                                child: Column(
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.business_outlined,
+                                                      size: 40,
+                                                      color: Colors.grey,
+                                                    ),
+                                                    const SizedBox(height: 8),
+                                                    const Text(
+                                                      'Henüz şirket kaydınız yok',
+                                                      style: TextStyle(
+                                                        color: Colors.grey,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 12),
+                                                    ElevatedButton(
+                                                      onPressed: () {
+                                                        try {
+                                                          Navigator.push(
+                                                            context,
+                                                            MaterialPageRoute(
+                                                              builder: (context) =>
+                                                                  const AddCompanyScreen(),
+                                                            ),
+                                                          );
+                                                        } catch (e) {
+                                                          debugPrint(
+                                                            'Navigation error: $e',
+                                                          );
+                                                        }
+                                                      },
+                                                      child: const Text(
+                                                        'Şirket Ekle',
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                              child: selectedCompany != null
-                                                  ? Row(
-                                                      children: [
-                                                        CompanyLogoAvatar(
+                                              )
+                                            else
+                                              Column(
+                                                children: [
+                                                  // Basit container box (Generic Aktif) kaldırıldı
+
+                                                  // Seçili şirket detay kartı
+                                                  if (selectedCompany != null)
+                                                    Card(
+                                                      color: AppConstants.primaryLight
+                                                          .withOpacity(0.1),
+                                                      shape: RoundedRectangleBorder(
+                                                        borderRadius:
+                                                            BorderRadius.circular(12),
+                                                        side: BorderSide(
+                                                          color: AppConstants
+                                                              .primaryColor,
+                                                          width: 1,
+                                                        ),
+                                                      ),
+                                                      child: ListTile(
+                                                        leading: CompanyLogoAvatar(
                                                           logoPathOrUrl:
-                                                              selectedCompany
-                                                                  .logo,
-                                                          size: 24,
+                                                              selectedCompany.logo,
+                                                          size: 32,
                                                           circular: true,
                                                           backgroundColor:
-                                                              Colors.green
-                                                                  .withOpacity(
-                                                                    0.15,
-                                                                  ),
+                                                              AppConstants
+                                                                  .primaryLight,
                                                           fallbackIcon:
                                                               Icons.business,
                                                           fallbackIconColor:
-                                                              Colors.green,
+                                                              AppConstants
+                                                                  .primaryColor,
                                                         ),
-                                                        const SizedBox(
-                                                          width: 8,
+                                                        title: Text(
+                                                          selectedCompany.name,
+                                                          style: AppConstants
+                                                              .bodyStyle
+                                                              .copyWith(
+                                                                fontWeight:
+                                                                    FontWeight.w600,
+                                                                color: AppConstants
+                                                                    .primaryColor,
+                                                              ),
                                                         ),
-                                                        Expanded(
+                                                        subtitle: Text(
+                                                          'Seçili şirket - Faturalarda kullanılacak',
+                                                          style: AppConstants
+                                                              .captionStyle
+                                                              .copyWith(
+                                                                color: AppConstants
+                                                                    .primaryColor,
+                                                              ),
+                                                        ),
+                                                        trailing: Container(
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 8,
+                                                                vertical: 4,
+                                                              ),
+                                                          decoration: BoxDecoration(
+                                                            color: AppConstants
+                                                                .primaryColor,
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  12,
+                                                                ),
+                                                          ),
                                                           child: Text(
-                                                            'Aktif: ${selectedCompany.name}',
-                                                            style:
-                                                                const TextStyle(
+                                                            'Aktif',
+                                                            style: AppConstants
+                                                                .captionStyle
+                                                                .copyWith(
+                                                                  color: AppConstants
+                                                                      .textOnPrimary,
                                                                   fontWeight:
-                                                                      FontWeight
-                                                                          .w600,
+                                                                      FontWeight.w600,
                                                                 ),
                                                           ),
                                                         ),
-                                                      ],
-                                                    )
-                                                  : const Row(
-                                                      children: [
-                                                        Icon(
-                                                          Icons.business,
-                                                          color: Colors.grey,
-                                                        ),
-                                                        SizedBox(width: 8),
-                                                        Text(
-                                                          'Aktif şirket seçilmemiş',
-                                                        ),
-                                                      ],
+                                                      ),
                                                     ),
-                                            ),
-                                            const SizedBox(height: 16),
-
-                                            // Seçili şirket gösterimi
-                                            if (selectedCompany != null)
-                                              Card(
-                                                color: AppConstants.primaryLight
-                                                    .withOpacity(0.1),
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(12),
-                                                  side: BorderSide(
-                                                    color: AppConstants
-                                                        .primaryColor,
-                                                    width: 1,
-                                                  ),
-                                                ),
-                                                child: ListTile(
-                                                  leading: CompanyLogoAvatar(
-                                                    logoPathOrUrl:
-                                                        selectedCompany.logo,
-                                                    size: 32,
-                                                    circular: true,
-                                                    backgroundColor:
-                                                        AppConstants
-                                                            .primaryLight,
-                                                    fallbackIcon:
-                                                        Icons.business,
-                                                    fallbackIconColor:
-                                                        AppConstants
-                                                            .primaryColor,
-                                                  ),
-                                                  title: Text(
-                                                    selectedCompany.name,
-                                                    style: AppConstants
-                                                        .bodyStyle
-                                                        .copyWith(
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          color: AppConstants
-                                                              .primaryColor,
-                                                        ),
-                                                  ),
-                                                  subtitle: Text(
-                                                    'Seçili şirket - Faturalarda kullanılacak',
-                                                    style: AppConstants
-                                                        .captionStyle
-                                                        .copyWith(
-                                                          color: AppConstants
-                                                              .primaryColor,
-                                                        ),
-                                                  ),
-                                                  trailing: Container(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 8,
-                                                          vertical: 4,
-                                                        ),
-                                                    decoration: BoxDecoration(
-                                                      color: AppConstants
-                                                          .primaryColor,
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            12,
-                                                          ),
-                                                    ),
-                                                    child: Text(
-                                                      'Aktif',
-                                                      style: AppConstants
-                                                          .captionStyle
-                                                          .copyWith(
-                                                            color: AppConstants
-                                                                .textOnPrimary,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                          ),
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
 
                                             const SizedBox(height: 12),
 
@@ -788,121 +699,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                   const SizedBox(height: 24),
 
-                  // Firebase yedek çekme - optimize edilmiş
-                  ElevatedButton.icon(
-                    onPressed: hybridProvider.isLoading
-                        ? null
-                        : () async {
-                            // Loading dialog göster
-                            showDialog(
-                              context: context,
-                              barrierDismissible: false,
-                              builder: (context) => AlertDialog(
-                                content: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const CircularProgressIndicator(),
-                                    const SizedBox(height: 16),
-                                    const Text(
-                                      'Firebase\'den veriler çekiliyor...',
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-
-                            try {
-                              final provider = context.read<HybridProvider>();
-
-                              // Optimize edilmiş sıralı yükleme - UI blocking önlemek için
-                              provider.enablePullOnce();
-
-                              // 1. Önce sync yap
-                              await provider.performSync();
-
-                              // 2. Sonra verileri paralel yükle (UI blocking önlemek için Future.wait)
-                              await Future.wait([
-                                provider.loadCustomers(),
-                                provider.loadProducts(),
-                                provider.loadInvoices(),
-                                provider.loadCompanyProfiles(),
-                              ]);
-
-                              provider.disablePull();
-
-                              if (context.mounted) {
-                                Navigator.of(
-                                  context,
-                                ).pop(); // Loading dialog kapat
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Firebase\'den tüm veriler başarıyla çekildi!',
-                                    ),
-                                    backgroundColor: AppConstants.successColor,
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                Navigator.of(
-                                  context,
-                                ).pop(); // Loading dialog kapat
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Firebase yedek çekme hatası: $e',
-                                    ),
-                                    backgroundColor: AppConstants.errorColor,
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                    icon: const Icon(Icons.cloud_download),
-                    label: const Text('Firebase\'den Yedek Çek'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppConstants.primaryColor,
-                      foregroundColor: AppConstants.textOnPrimary,
-                      minimumSize: const Size(double.infinity, 48),
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Hafif şirket profili güncelleme
-                  OutlinedButton.icon(
-                    onPressed: hybridProvider.isLoading
-                        ? null
-                        : () async {
-                            try {
-                              final provider = context.read<HybridProvider>();
-                              await provider.loadCompanyProfiles();
-
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'Şirket profilleri güncellendi',
-                                    ),
-                                    backgroundColor: AppConstants.successColor,
-                                  ),
-                                );
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Güncelleme hatası: $e'),
-                                    backgroundColor: AppConstants.errorColor,
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Şirket Profillerini Güncelle'),
-                  ),
+                  // Manuel butonlar kaldırıldı (Otomatik yapılıyor)
                   const SizedBox(height: 12),
 
                   // Çıkış butonu

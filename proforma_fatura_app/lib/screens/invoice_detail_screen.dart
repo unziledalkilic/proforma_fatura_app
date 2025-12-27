@@ -19,20 +19,8 @@ class InvoiceDetailScreen extends StatelessWidget {
         title: const Text('Fatura Detayı'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () {
-              // TODO: Fatura düzenleme ekranına yönlendir
-            },
-          ),
-          IconButton(
             icon: const Icon(Icons.picture_as_pdf),
             onPressed: () => _showPdfPreview(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.print),
-            onPressed: () {
-              // TODO: Fatura yazdırma işlemi
-            },
           ),
         ],
       ),

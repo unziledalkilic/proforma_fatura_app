@@ -3,7 +3,7 @@ import '../constants/app_constants.dart';
 import '../utils/text_formatter.dart';
 import '../models/invoice.dart';
 import '../models/company_info.dart';
-import 'package:provider/provider.dart'; // yoksa ekle
+// yoksa ekle
 import '../widgets/invoice_terms_list.dart';
 
 class InvoicePreviewScreen extends StatelessWidget {

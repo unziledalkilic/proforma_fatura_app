@@ -547,13 +547,13 @@ class HybridDatabaseService {
   Future<void> _checkConnectivity() async {
     final wasOnline = _isOnline;
     try {
-      final connectivityResult = await Connectivity().checkConnectivity();
-      
+      final result = await Connectivity().checkConnectivity();
+
       bool hasNetwork = false;
-      if (connectivityResult is List) {
-        hasNetwork = !connectivityResult.contains(ConnectivityResult.none);
-      } else if (connectivityResult is ConnectivityResult) {
-        hasNetwork = connectivityResult != ConnectivityResult.none;
+      // Handle simple ConnectivityResult (v5 and below)
+      // The compiler error confirms 'result' is statically ConnectivityResult, not List.
+      if (result != ConnectivityResult.none) {
+        hasNetwork = true;
       }
 
       if (!hasNetwork) {
@@ -571,7 +571,8 @@ class HybridDatabaseService {
             final response = await http
                 .get(Uri.parse('https://firebase.googleapis.com'))
                 .timeout(const Duration(seconds: 10));
-            _isOnline = response.statusCode == 200 || response.statusCode == 404;
+            _isOnline =
+                response.statusCode == 200 || response.statusCode == 404;
           } catch (e2) {
             // No actual internet access
             _isOnline = false;
@@ -597,9 +598,9 @@ class HybridDatabaseService {
   /// Start connectivity listener
   void _startConnectivityListener() {
     Connectivity().onConnectivityChanged.listen((result) {
-       // Re-check actual connectivity when network state changes
-       debugPrint('📡 Network state changed: $result');
-       _checkConnectivity();
+      // Re-check actual connectivity when network state changes
+      debugPrint('📡 Network state changed: $result');
+      _checkConnectivity();
     });
   }
 
@@ -898,7 +899,7 @@ class HybridDatabaseService {
     productMap.remove('id'); // id alanını kaldır
 
     // UNIQUE (user_id, company_id, name) ihlallerinde fallback: farklı company_id için update
-    Future<int> _doUpdateById(int id) async {
+    Future<int> doUpdateById(int id) async {
       return db.update(
         'products',
         productMap,
@@ -921,7 +922,7 @@ class HybridDatabaseService {
       } else {
         final productId = IdConverter.stringToInt(product.id);
         if (productId != null) {
-          result = await _doUpdateById(productId);
+          result = await doUpdateById(productId);
         } else {
           debugPrint('❌ Geçersiz product ID: ${product.id}');
           return 0;
@@ -1359,10 +1360,7 @@ class HybridDatabaseService {
             name: customer.name,
           );
 
-          if (firebaseId == null) {
-            // Create new customer in Firebase
-            firebaseId = await _firebaseService.addCustomer(customer);
-          }
+          firebaseId ??= await _firebaseService.addCustomer(customer);
         }
 
         if (firebaseId != null && firebaseId.isNotEmpty) {
@@ -1631,10 +1629,7 @@ class HybridDatabaseService {
           invoiceNumber: invoice.invoiceNumber,
         );
 
-        if (firebaseId == null) {
-          // Create new invoice in Firebase
-          firebaseId = await _firebaseService.addInvoice(invoice);
-        }
+        firebaseId ??= await _firebaseService.addInvoice(invoice);
       }
 
       if (firebaseId != null && firebaseId.isNotEmpty) {
@@ -1726,9 +1721,102 @@ class HybridDatabaseService {
       // Pull invoices from Firebase
       final firebaseInvoices = await _firebaseService.getInvoices();
       await _mergeFirebaseInvoices(firebaseInvoices);
+
+      // Pull company profiles from Firebase
+      final firebaseCompanyInfos = await _firebaseService.getCompanyProfiles();
+      await _mergeFirebaseCompanyProfiles(firebaseCompanyInfos);
     } catch (e) {
       // Log error silently - avoid print in production
       debugPrint('Pull from Firebase error: $e');
+    }
+  }
+
+  Future<void> _mergeFirebaseCompanyProfiles(
+    List<CompanyInfo> firebaseCompanyInfos,
+  ) async {
+    final db = await database;
+    final currentUserId = await _getCurrentSQLiteUserId();
+
+    for (var company in firebaseCompanyInfos) {
+      final existing = await db.query(
+        'company_info',
+        where: 'firebase_id = ?',
+        whereArgs: [
+          company.firebaseId ?? company.id.toString(),
+        ], // Fallback if firebaseId is used as id in model
+      );
+
+      final companyMap = company.toMap();
+      companyMap.remove('id');
+      companyMap['firebase_id'] =
+          company.firebaseId ??
+          company.id.toString(); // Ensure firebase_id is set
+      companyMap['firebase_synced'] = 1;
+      companyMap['last_sync_time'] = DateTime.now().toIso8601String();
+      companyMap['user_id'] = currentUserId;
+
+      if (existing.isEmpty) {
+        // Try match by name (optional, but good for deduplication)
+        final matchByName = await db.query(
+          'company_info',
+          where:
+              'user_id = ? AND name = ? AND (firebase_id IS NULL OR firebase_id = "")',
+          whereArgs: [currentUserId, company.name],
+        );
+
+        if (matchByName.isNotEmpty) {
+          // LAST WRITE WINS
+          final localUpdateTimeStr = matchByName.first['updated_at'] as String?;
+          final localUpdateTime = localUpdateTimeStr != null
+              ? DateTime.parse(localUpdateTimeStr)
+              : DateTime.fromMillisecondsSinceEpoch(0);
+
+          final serverUpdateTime = company.updatedAt;
+
+          if (localUpdateTime.isAfter(serverUpdateTime)) {
+            debugPrint(
+              '⏳ Yerel şirket profili daha güncel, sunucu verisi atlandı: ${company.name}',
+            );
+            continue;
+          }
+
+          await db.update(
+            'company_info',
+            companyMap,
+            where: 'id = ?',
+            whereArgs: [matchByName.first['id']],
+          );
+          debugPrint(
+            '✅ Şirket profili SQLite\'da eşleşti ve güncellendi: ${company.name}',
+          );
+        } else {
+          await db.insert('company_info', companyMap);
+          debugPrint('✅ Şirket profili SQLite\'a eklendi: ${company.name}');
+        }
+      } else {
+        // LAST WRITE WINS for existing by FID
+        final localUpdateTimeStr = existing.first['updated_at'] as String?;
+        final localUpdateTime = localUpdateTimeStr != null
+            ? DateTime.parse(localUpdateTimeStr)
+            : DateTime.fromMillisecondsSinceEpoch(0);
+
+        final serverUpdateTime = company.updatedAt;
+
+        if (localUpdateTime.isAfter(serverUpdateTime)) {
+          debugPrint(
+            '⏳ Yerel şirket profili daha güncel, sunucu verisi atlandı: ${company.name}',
+          );
+          continue;
+        }
+
+        await db.update(
+          'company_info',
+          companyMap,
+          where: 'firebase_id = ?',
+          whereArgs: [company.firebaseId ?? company.id.toString()],
+        );
+        debugPrint('✅ Şirket profili SQLite\'da güncellendi: ${company.name}');
+      }
     }
   }
 
@@ -1811,6 +1899,22 @@ class HybridDatabaseService {
         }
 
         if (match != null) {
+          // LAST WRITE WINS: Check timestamps
+          final localUpdateTimeStr = match['updated_at'] as String?;
+          final localUpdateTime = localUpdateTimeStr != null
+              ? DateTime.parse(localUpdateTimeStr)
+              : DateTime.fromMillisecondsSinceEpoch(0);
+
+          final serverUpdateTime = customer.updatedAt;
+
+          if (localUpdateTime.isAfter(serverUpdateTime)) {
+            debugPrint(
+              '⏳ Yerel veri daha güncel, sunucu verisi atlandı: ${customer.name}',
+            );
+            // TODO: İsterseniz burada sunucuyu güncellemek için sync kuyruğuna ekleyebilirsiniz (Self-healing)
+            continue;
+          }
+
           // Elde var olan kaydı güncelle (firebase_id bağla)
           await db.update(
             'customers',
@@ -1828,6 +1932,22 @@ class HybridDatabaseService {
         }
       } else {
         final target = byEmail.isNotEmpty ? byEmail.first : byFid.first;
+
+        // LAST WRITE WINS: Check timestamps for existing record by ID/Email check
+        final localUpdateTimeStr = target['updated_at'] as String?;
+        final localUpdateTime = localUpdateTimeStr != null
+            ? DateTime.parse(localUpdateTimeStr)
+            : DateTime.fromMillisecondsSinceEpoch(0);
+
+        final serverUpdateTime = customer.updatedAt;
+
+        if (localUpdateTime.isAfter(serverUpdateTime)) {
+          debugPrint(
+            '⏳ Yerel veri daha güncel, sunucu verisi atlandı: ${customer.name}',
+          );
+          continue;
+        }
+
         await db.update(
           'customers',
           customerMap,
@@ -1894,6 +2014,21 @@ class HybridDatabaseService {
         }
 
         if (match != null) {
+          // LAST WRITE WINS: Timestamp
+          final localUpdateTimeStr = match['updated_at'] as String?;
+          final localUpdateTime = localUpdateTimeStr != null
+              ? DateTime.parse(localUpdateTimeStr)
+              : DateTime.fromMillisecondsSinceEpoch(0);
+
+          final serverUpdateTime = product.updatedAt;
+
+          if (localUpdateTime.isAfter(serverUpdateTime)) {
+            debugPrint(
+              '⏳ Yerel ürün daha güncel, sunucu verisi atlandı: ${product.name}',
+            );
+            continue;
+          }
+
           await db.update(
             'products',
             productMap,
@@ -1922,6 +2057,21 @@ class HybridDatabaseService {
           }
         }
       } else {
+        // LAST WRITE WINS for existing by FID
+        final localUpdateTimeStr = existing.first['updated_at'] as String?;
+        final localUpdateTime = localUpdateTimeStr != null
+            ? DateTime.parse(localUpdateTimeStr)
+            : DateTime.fromMillisecondsSinceEpoch(0);
+
+        final serverUpdateTime = product.updatedAt;
+
+        if (localUpdateTime.isAfter(serverUpdateTime)) {
+          debugPrint(
+            '⏳ Yerel ürün daha güncel, sunucu verisi atlandı: ${product.name}',
+          );
+          continue;
+        }
+
         await db.update(
           'products',
           productMap,
@@ -1971,6 +2121,21 @@ class HybridDatabaseService {
 
         int invoiceId;
         if (match != null) {
+          // LAST WRITE WINS: Timestamp
+          final localUpdateTimeStr = match['updated_at'] as String?;
+          final localUpdateTime = localUpdateTimeStr != null
+              ? DateTime.parse(localUpdateTimeStr)
+              : DateTime.fromMillisecondsSinceEpoch(0);
+
+          final serverUpdateTime = invoice.updatedAt;
+
+          if (localUpdateTime.isAfter(serverUpdateTime)) {
+            debugPrint(
+              '⏳ Yerel fatura daha güncel, sunucu verisi atlandı: ${invoice.invoiceNumber}',
+            );
+            continue;
+          }
+
           await db.update(
             'invoices',
             invoiceMap,
@@ -1987,10 +2152,18 @@ class HybridDatabaseService {
         }
 
         // Insert invoice items
+        // Mevcut kalemleri silip yenilerini ekle (sadece güncelleme durumunda)
+        if (match != null) {
+          await db.delete(
+            'invoice_items',
+            where: 'invoice_id = ?',
+            whereArgs: [invoiceId],
+          );
+        }
+
         for (var item in invoice.items) {
           final itemMap = item.toMap();
-          // SQLite id alanına Firebase ID'yi koyma - sadece firebase_id alanına koy
-          itemMap.remove('id'); // id alanını kaldır
+          itemMap.remove('id'); // ID'yi kaldır, yeni üretilecek
           itemMap['invoice_id'] = invoiceId;
           itemMap['firebase_synced'] = 1;
           itemMap['last_sync_time'] = DateTime.now().toIso8601String();
@@ -2001,12 +2174,43 @@ class HybridDatabaseService {
         final target = existingByNumber.isNotEmpty
             ? existingByNumber.first
             : existingByFirebase.first;
+
+        final localUpdateTimeStr = target['updated_at'] as String?;
+        final localUpdateTime = localUpdateTimeStr != null
+            ? DateTime.parse(localUpdateTimeStr)
+            : DateTime.fromMillisecondsSinceEpoch(0);
+
+        final serverUpdateTime = invoice.updatedAt;
+
+        if (localUpdateTime.isAfter(serverUpdateTime)) {
+          debugPrint(
+            '⏳ Yerel fatura daha güncel, sunucu verisi atlandı: ${invoice.invoiceNumber}',
+          );
+          continue;
+        }
+
         await db.update(
           'invoices',
           invoiceMap,
           where: 'id = ?',
           whereArgs: [target['id']],
         );
+
+        // Itemları da güncelle
+        final invId = target['id'] as int;
+        await db.delete(
+          'invoice_items',
+          where: 'invoice_id = ?',
+          whereArgs: [invId],
+        );
+        for (var item in invoice.items) {
+          final itemMap = item.toMap();
+          itemMap.remove('id');
+          itemMap['invoice_id'] = invId;
+          itemMap['firebase_synced'] = 1;
+          itemMap['last_sync_time'] = DateTime.now().toIso8601String();
+          await db.insert('invoice_items', itemMap);
+        }
         debugPrint('✅ Fatura SQLite\'da güncellendi: ${invoice.invoiceNumber}');
       }
     }

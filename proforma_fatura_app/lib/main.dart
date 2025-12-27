@@ -16,6 +16,7 @@ import 'screens/product_form_screen.dart';
 import 'screens/invoice_form_screen.dart';
 import 'screens/company_info_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/auth_wrapper.dart';
 import 'providers/hybrid_provider.dart';
 
 void main() async {
@@ -262,7 +263,7 @@ class ProformaFaturaApp extends StatelessWidget {
         ],
         supportedLocales: const [Locale('tr', 'TR'), Locale('en', 'US')],
         locale: const Locale('tr', 'TR'),
-        home: const LoginScreen(),
+        home: const AuthWrapper(),
         routes: {
           '/login': (context) => const LoginScreen(),
           '/register': (context) => const RegisterScreen(),
