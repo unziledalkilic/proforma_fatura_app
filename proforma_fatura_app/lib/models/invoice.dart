@@ -13,6 +13,7 @@ class Invoice {
   final String? terms;
   final double? discountRate; // Genel iskonto oranı (%)
   final String? companyId; // Şirket ID'si
+  final String currency; // Fatura para birimi (TRY, USD, EUR, GBP)
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -28,6 +29,7 @@ class Invoice {
     this.terms,
     this.discountRate,
     this.companyId,
+    this.currency = 'TRY',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -69,6 +71,7 @@ class Invoice {
       'terms': terms,
       'discount_rate': discountRate, // SQLite için snake_case
       'company_id': companyId, // SQLite için snake_case
+      'currency': currency,
       'created_at': createdAt.toIso8601String(), // SQLite için snake_case
       'updated_at': updatedAt.toIso8601String(), // SQLite için snake_case
     };
@@ -97,6 +100,7 @@ class Invoice {
       terms: map['terms'],
       discountRate: (map['discount_rate'] ?? map['discountRate'])?.toDouble(),
       companyId: map['company_id']?.toString() ?? map['companyId']?.toString(),
+      currency: map['currency'] ?? 'TRY',
       createdAt: DateTime.parse(
         map['created_at'] ??
             map['createdAt'] ??
@@ -122,6 +126,7 @@ class Invoice {
     String? terms,
     double? discountRate,
     String? companyId,
+    String? currency,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -137,6 +142,7 @@ class Invoice {
       terms: terms ?? this.terms,
       discountRate: discountRate ?? this.discountRate,
       companyId: companyId ?? this.companyId,
+      currency: currency ?? this.currency,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

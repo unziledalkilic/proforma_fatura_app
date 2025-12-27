@@ -163,6 +163,30 @@ class CurrencyService {
     }
   }
 
+  /// Genel döviz çevirici (Herhangi birinden herhangi birine)
+  static Future<double?> convertCurrency(
+    double amount,
+    String fromCurrency,
+    String toCurrency,
+  ) async {
+    // Aynı para birimi ise direkt döndür
+    if (fromCurrency == toCurrency) return amount;
+
+    // TRY'ye çevir veya TRY'den çevir
+    if (fromCurrency == 'TRY') {
+      return await convertFromTRY(amount, toCurrency);
+    } else if (toCurrency == 'TRY') {
+      return await convertToTRY(amount, fromCurrency);
+    } else {
+      // Çapraz kur: Önce TRY'ye çevir, sonra hedefe çevir
+      final tryAmount = await convertToTRY(amount, fromCurrency);
+      if (tryAmount != null) {
+        return await convertFromTRY(tryAmount, toCurrency);
+      }
+    }
+    return null;
+  }
+
   /// Cache'i temizle
   static void clearCache() {
     _cachedRates = null;

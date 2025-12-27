@@ -82,7 +82,7 @@ class InvoiceDetailScreen extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              '₺${invoice.totalAmount.toStringAsFixed(2)}',
+                              '${_getCurrencySymbol(invoice.currency)}${invoice.totalAmount.toStringAsFixed(2)}',
                               style: const TextStyle(
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,
@@ -215,7 +215,7 @@ class InvoiceDetailScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '₺${(invoice.items.fold<double>(0, (sum, item) => sum + item.unitPrice) / invoice.items.length).toStringAsFixed(2)}',
+                            '${_getCurrencySymbol(invoice.currency)}${(invoice.items.fold<double>(0, (sum, item) => sum + item.unitPrice) / invoice.items.length).toStringAsFixed(2)}',
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
@@ -481,7 +481,7 @@ class InvoiceDetailScreen extends StatelessWidget {
                                   child: Column(
                                     children: [
                                       Text(
-                                        '₺${item.unitPrice.toStringAsFixed(2)}',
+                                        '${_getCurrencySymbol(item.currency ?? item.product?.currency ?? 'TRY')}${item.unitPrice.toStringAsFixed(2)}',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.bold,
                                         ),
@@ -543,7 +543,7 @@ class InvoiceDetailScreen extends StatelessWidget {
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
                                       Text(
-                                        '₺${item.totalAmount.toStringAsFixed(2)}',
+                                        '${_getCurrencySymbol(item.currency ?? item.product?.currency ?? 'TRY')}${item.totalAmount.toStringAsFixed(2)}',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.bold,
                                           fontSize: 16,
@@ -571,13 +571,13 @@ class InvoiceDetailScreen extends StatelessWidget {
                                   crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     Text(
-                                      'Ara Toplam: ₺${item.subtotal.toStringAsFixed(2)}',
+                                      'Ara Toplam: ${_getCurrencySymbol(item.currency ?? item.product?.currency ?? 'TRY')}${item.subtotal.toStringAsFixed(2)}',
                                       style: const TextStyle(fontSize: 12),
                                     ),
                                     if (item.discountRate != null &&
                                         item.discountRate! > 0)
                                       Text(
-                                        'İskonto: -₺${item.discountAmount.toStringAsFixed(2)}',
+                                        'İskonto: -${_getCurrencySymbol(item.currency ?? item.product?.currency ?? 'TRY')}${item.discountAmount.toStringAsFixed(2)}',
                                         style: const TextStyle(
                                           fontSize: 12,
                                           color: Colors.green,
@@ -586,7 +586,7 @@ class InvoiceDetailScreen extends StatelessWidget {
                                     if (item.taxRate != null &&
                                         item.taxRate! > 0)
                                       Text(
-                                        'KDV: +₺${item.taxAmount.toStringAsFixed(2)}',
+                                        'KDV: +${_getCurrencySymbol(item.currency ?? item.product?.currency ?? 'TRY')}${item.taxAmount.toStringAsFixed(2)}',
                                         style: const TextStyle(
                                           fontSize: 12,
                                           color: Colors.blue,
@@ -618,7 +618,7 @@ class InvoiceDetailScreen extends StatelessWidget {
                                 style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                               Text(
-                                '₺${invoice.subtotal.toStringAsFixed(2)}',
+                                '${_getCurrencySymbol(invoice.currency)}${invoice.subtotal.toStringAsFixed(2)}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -636,7 +636,7 @@ class InvoiceDetailScreen extends StatelessWidget {
                                   style: const TextStyle(color: Colors.green),
                                 ),
                                 Text(
-                                  '-₺${invoice.discountAmount.toStringAsFixed(2)}',
+                                  '-${_getCurrencySymbol(invoice.currency)}${invoice.discountAmount.toStringAsFixed(2)}',
                                   style: const TextStyle(
                                     color: Colors.green,
                                     fontWeight: FontWeight.bold,
@@ -654,7 +654,7 @@ class InvoiceDetailScreen extends StatelessWidget {
                                 style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                               Text(
-                                '₺${invoice.totalTaxAmount.toStringAsFixed(2)}',
+                                '${_getCurrencySymbol(invoice.currency)}${invoice.totalTaxAmount.toStringAsFixed(2)}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: Colors.blue,
@@ -674,7 +674,7 @@ class InvoiceDetailScreen extends StatelessWidget {
                                 ),
                               ),
                               Text(
-                                '₺${invoice.totalAmount.toStringAsFixed(2)}',
+                                '${_getCurrencySymbol(invoice.currency)}${invoice.totalAmount.toStringAsFixed(2)}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 20,
@@ -771,5 +771,20 @@ class InvoiceDetailScreen extends StatelessWidget {
         builder: (context) => PdfPreviewScreen(invoice: invoice),
       ),
     );
+  }
+  String _getCurrencySymbol(String? currency) {
+    if (currency == null) return '₺';
+    switch (currency.toUpperCase()) {
+      case 'TRY':
+        return '₺';
+      case 'USD':
+        return '\$';
+      case 'EUR':
+        return '€';
+      case 'GBP':
+        return '£';
+      default:
+        return currency;
+    }
   }
 }

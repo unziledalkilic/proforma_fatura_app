@@ -207,11 +207,15 @@ class InvoicePreviewScreen extends StatelessWidget {
                     ),
                     Expanded(
                       flex: 1,
-                      child: Text('₺${item.unitPrice.toStringAsFixed(2)}'),
+                      child: Text(
+                        '${_getCurrencySymbol(item.product?.currency ?? 'TRY')}${item.unitPrice.toStringAsFixed(2)}',
+                      ),
                     ),
                     Expanded(
                       flex: 1,
-                      child: Text('₺${item.totalAmount.toStringAsFixed(2)}'),
+                      child: Text(
+                        '${_getCurrencySymbol(item.product?.currency ?? 'TRY')}${item.totalAmount.toStringAsFixed(2)}',
+                      ),
                     ),
                   ],
                 ),
@@ -235,6 +239,10 @@ class InvoicePreviewScreen extends StatelessWidget {
     );
     final total = subtotal - discountAmount + totalTax;
 
+    final currencySymbol = invoice.items.isNotEmpty
+        ? _getCurrencySymbol(invoice.items.first.product?.currency ?? 'TRY')
+        : '₺';
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -244,7 +252,7 @@ class InvoicePreviewScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('Ara Toplam:'),
-                Text('₺${subtotal.toStringAsFixed(2)}'),
+                Text('$currencySymbol${subtotal.toStringAsFixed(2)}'),
               ],
             ),
             if (invoice.discountRate != null && invoice.discountRate! > 0) ...[
@@ -255,7 +263,7 @@ class InvoicePreviewScreen extends StatelessWidget {
                   Text(
                     'İskonto (%${TextFormatter.formatPercent(invoice.discountRate)}):',
                   ),
-                  Text('-₺${discountAmount.toStringAsFixed(2)}'),
+                  Text('-' + currencySymbol + discountAmount.toStringAsFixed(2)),
                 ],
               ),
             ],
@@ -264,7 +272,7 @@ class InvoicePreviewScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text('KDV Toplamı:'),
-                Text('₺${totalTax.toStringAsFixed(2)}'),
+                Text('$currencySymbol${totalTax.toStringAsFixed(2)}'),
               ],
             ),
             const Divider(),
@@ -276,7 +284,7 @@ class InvoicePreviewScreen extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                 ),
                 Text(
-                  '₺${total.toStringAsFixed(2)}',
+                  '$currencySymbol${total.toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 18,
@@ -351,5 +359,20 @@ class InvoicePreviewScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  String _getCurrencySymbol(String currency) {
+    switch (currency.toUpperCase()) {
+      case 'TRY':
+        return '₺';
+      case 'USD':
+        return '\$';
+      case 'EUR':
+        return '€';
+      case 'GBP':
+        return '£';
+      default:
+        return currency;
+    }
   }
 }

@@ -12,6 +12,7 @@ import '../widgets/company_logo_avatar.dart';
 
 // ✅ Eklendi: DB erişimi için
 import '../services/hybrid_database_service.dart';
+import '../services/currency_service.dart';
 
 class InvoiceFormScreen extends StatefulWidget {
   final Invoice? invoice; // Düzenleme modu için
@@ -47,6 +48,12 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   Product? _selectedProduct;
   // Satıcı şirket seçimi
   String? _selectedCompanyId; // firebaseId veya null
+
+  // ✅ Eklendi: Fatura Para Birimi
+  String _invoiceCurrency = 'TRY';
+  
+  // ✅ Eklendi: Ürün girişindeki anlık para birimi seçimi
+  String? _itemCurrency;
 
   // ✅ Eklendi: Fatura Detayları (invoice_terms) UI state
   List<Map<String, dynamic>> _terms = []; // invoice_terms satırları
@@ -137,6 +144,13 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
     return s;
   }
 
+  // ✅ Eklendi: Fatura genel kur sembolü (ilk ürüne göre)
+  String get _invoiceCurrencySymbol {
+    if (_invoiceItems.isEmpty) return '₺';
+    // İlk ürünün para birimini baz al
+    return _getCurrencySymbol(_invoiceItems.first.product?.currency ?? 'TRY');
+  }
+
   // ✅ Eklendi: seçilen maddeleri invoice_term_selections tablosuna yaz
   Future<void> _saveInvoiceTermsToDb(int invoiceId) async {
     final db = await HybridDatabaseService().database;
@@ -177,6 +191,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
   void _loadInvoiceData(Invoice invoice) {
     // Fatura bilgilerini yükle
     _invoiceNumberController.text = invoice.invoiceNumber;
+    _invoiceCurrency = invoice.currency; // ✅ Yüklendi
 
     // Müşteri bilgilerini yükle
     _customerNameController.text = invoice.customer.name;
@@ -253,13 +268,91 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       _selectedProduct = product;
       if (product != null) {
         _unitPriceController.text = product.price.toString();
-        _taxRateController.text =
-            '18'; // Varsayılan KDV oranı (tam sayı gösterim)
+        _taxRateController.text = '18'; // Varsayılan KDV oranı
+        _itemCurrency = product.currency; // ✅ Varsayılan olarak ürünün para birimi
       } else {
         _unitPriceController.clear();
         _taxRateController.clear();
+        _itemCurrency = null; // ✅ Seçim yok
       }
     });
+  }
+
+  // ✅ Eklendi: Para birimi ve kur çevirici diyaloğu
+  void _showCurrencyConversionDialog() {
+    if (_selectedProduct == null) return;
+
+    final currentPrice = double.tryParse(_unitPriceController.text) ?? 0;
+    final sourceCurrency = _itemCurrency ?? _selectedProduct!.currency;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Para Birimi Çevir'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Dönüştürmek istediğiniz para birimini seçin.\nFiyat güncel kura göre otomatik hesaplanacaktır.',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            const SizedBox(height: 16),
+            ...['TRY', 'USD', 'EUR', 'GBP'].map((targetCurrency) {
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: Colors.blue.withOpacity(0.1),
+                  child: Text(_getCurrencySymbol(targetCurrency)),
+                ),
+                title: Text('$targetCurrency (${_getCurrencySymbol(targetCurrency)})'),
+                trailing: sourceCurrency == targetCurrency
+                    ? const Icon(Icons.check_circle, color: Colors.green)
+                    : const Icon(Icons.arrow_forward_ios, size: 16),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  if (sourceCurrency != targetCurrency) {
+                    // Çeviri yap
+                    final converted = await CurrencyService.convertCurrency(
+                      currentPrice,
+                      sourceCurrency,
+                      targetCurrency,
+                    );
+                    
+                    if (converted != null) {
+                      setState(() {
+                        _unitPriceController.text = converted.toStringAsFixed(2);
+                        _itemCurrency = targetCurrency;
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Fiyat $targetCurrency kuruna çevrildi',
+                          ),
+                          backgroundColor: Colors.green,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Kur bilgisi alınamadı!'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                },
+              );
+            }).toList(),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _addProductToInvoice() {
@@ -305,6 +398,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
       unitPrice: unitPrice,
       discountRate: discountRate,
       taxRate: taxRate,
+      currency: _itemCurrency ?? _selectedProduct!.currency, // ✅ Para birimi
       notes: _itemNotesController.text.trim().isEmpty
           ? null
           : _itemNotesController.text.trim(),
@@ -357,6 +451,12 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
 
     if (!_formKey.currentState!.validate()) {
       debugPrint('❌ Form validasyonu başarısız');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lütfen kırmızı ile işaretlenen zorunlu alanları doldurunuz.'),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
@@ -430,6 +530,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
           invoiceNumber: _invoiceNumberController.text.trim(),
           customer: customer,
           items: _invoiceItems,
+          currency: _invoiceCurrency, // ✅ Güncellendi
           updatedAt: DateTime.now(),
         );
 
@@ -449,6 +550,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
           invoiceDate: DateTime.now(),
           dueDate: DateTime.now().add(const Duration(days: 30)), // 30 gün vade
           items: _invoiceItems,
+          currency: _invoiceCurrency, // ✅ Eklendi
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         );
@@ -580,6 +682,30 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // Fatura Para Birimi Seçimi
+                      DropdownButtonFormField<String>(
+                        value: _invoiceCurrency,
+                        decoration: const InputDecoration(
+                          labelText: 'Fatura Para Birimi',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.monetization_on),
+                        ),
+                        items: ['TRY', 'USD', 'EUR', 'GBP'].map((currency) {
+                          return DropdownMenuItem(
+                            value: currency,
+                            child: Text('$currency (${_getCurrencySymbol(currency)})'),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() {
+                              _invoiceCurrency = value;
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
                       // Fatura Numarası
                       TextFormField(
                         controller: _invoiceNumberController,
@@ -1030,40 +1156,49 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
 
                               // Ürün Detayları
                               if (_selectedProduct != null) ...[
-                                // Seçili ürün para birimi göstergesi
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: Colors.blue.withOpacity(0.3),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.currency_exchange,
-                                        size: 16,
-                                        color: Colors.blue[700],
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Para Birimi: ${_selectedProduct!.currency} (${_getCurrencySymbol(_selectedProduct!.currency)})',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.blue[700],
+                                // ✅ Eklendi: Para Birimi Değiştirme Butonu
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 16.0),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: InkWell(
+                                      onTap: _showCurrencyConversionDialog,
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.blue.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: Colors.blue.withOpacity(0.3),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.currency_exchange,
+                                              size: 16,
+                                              color: Colors.blue[700],
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              'Para Birimi: ${_itemCurrency ?? _selectedProduct!.currency} (${_getCurrencySymbol(_itemCurrency ?? _selectedProduct!.currency)}) - Değiştir',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: Colors.blue[700],
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
-                                    ],
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 16),
                                 Row(
                                   children: [
                                     Expanded(
@@ -1087,12 +1222,12 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                           labelText: 'Birim Fiyat *',
                                           border: OutlineInputBorder(),
                                           prefixIcon: Icon(
-                                            _selectedProduct?.currency == 'USD'
+                                            (_itemCurrency ?? _selectedProduct?.currency) == 'USD'
                                                 ? Icons.attach_money
-                                                : _selectedProduct?.currency ==
+                                                : (_itemCurrency ?? _selectedProduct?.currency) ==
                                                       'EUR'
                                                 ? Icons.euro
-                                                : _selectedProduct?.currency ==
+                                                : (_itemCurrency ?? _selectedProduct?.currency) ==
                                                       'GBP'
                                                 ? Icons.currency_pound
                                                 : Icons.currency_lira,
@@ -1248,13 +1383,13 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                         ),
                                         Expanded(
                                           child: Text(
-                                            '₺${item.unitPrice.toStringAsFixed(2)}',
+                                            '${_getCurrencySymbol(item.currency ?? item.product?.currency ?? 'TRY')}${item.unitPrice.toStringAsFixed(2)}',
                                             textAlign: TextAlign.center,
                                           ),
                                         ),
                                         Expanded(
                                           child: Text(
-                                            '₺${item.totalAmount.toStringAsFixed(2)}',
+                                            '${_getCurrencySymbol(item.currency ?? item.product?.currency ?? 'TRY')}${item.totalAmount.toStringAsFixed(2)}',
                                             textAlign: TextAlign.right,
                                             style: const TextStyle(
                                               fontWeight: FontWeight.bold,
@@ -1283,7 +1418,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                   children: [
                                     const Text('Ara Toplam:'),
                                     Text(
-                                      '₺${_calculateSubtotal().toStringAsFixed(2)}',
+                                      '$_invoiceCurrencySymbol${_calculateSubtotal().toStringAsFixed(2)}',
                                     ),
                                   ],
                                 ),
@@ -1295,7 +1430,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                     children: [
                                       const Text('Toplam İskonto:'),
                                       Text(
-                                        '-₺${_calculateTotalDiscount().toStringAsFixed(2)}',
+                                        '-$_invoiceCurrencySymbol${_calculateTotalDiscount().toStringAsFixed(2)}',
                                         style: const TextStyle(
                                           color: Colors.green,
                                         ),
@@ -1310,7 +1445,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                   children: [
                                     const Text('KDV Toplamı:'),
                                     Text(
-                                      '₺${_calculateTotalTax().toStringAsFixed(2)}',
+                                      '$_invoiceCurrencySymbol${_calculateTotalTax().toStringAsFixed(2)}',
                                     ),
                                   ],
                                 ),
@@ -1327,7 +1462,7 @@ class _InvoiceFormScreenState extends State<InvoiceFormScreen> {
                                       ),
                                     ),
                                     Text(
-                                      '₺${_calculateTotal().toStringAsFixed(2)}',
+                                      '$_invoiceCurrencySymbol${_calculateTotal().toStringAsFixed(2)}',
                                       style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 18,

@@ -10,6 +10,7 @@ class InvoiceItem {
   final double unitPrice;
   final double? discountRate; // İskonto oranı (%)
   final double? taxRate; // KDV oranı (%)
+  final String? currency; // Para birimi (TRY, USD, EUR, GBP)
   final String? notes;
   final double? total; // Firebase uyumluluğu için
 
@@ -23,6 +24,7 @@ class InvoiceItem {
     required this.unitPrice,
     this.discountRate,
     this.taxRate,
+    this.currency,
     this.notes,
     this.total,
   });
@@ -57,6 +59,7 @@ class InvoiceItem {
       'unit_price': unitPrice, // SQLite için snake_case
       'discount_rate': discountRate, // SQLite için snake_case
       'tax_rate': taxRate, // SQLite için snake_case
+      'currency': currency,
       'notes': notes,
       'created_at': DateTime.now().toIso8601String(), // SQLite için gerekli
       'updated_at': DateTime.now().toIso8601String(), // SQLite için gerekli
@@ -74,6 +77,7 @@ class InvoiceItem {
       unitPrice: (map['unit_price'] ?? map['unitPrice'] ?? 0.0).toDouble(),
       discountRate: (map['discount_rate'] ?? map['discountRate'])?.toDouble(),
       taxRate: (map['tax_rate'] ?? map['taxRate'])?.toDouble(),
+      currency: map['currency'],
       notes: map['notes'],
       total: (map['total'] ?? 0.0).toDouble(),
     );
@@ -89,6 +93,7 @@ class InvoiceItem {
     double? unitPrice,
     double? discountRate,
     double? taxRate,
+    String? currency,
     String? notes,
     double? total,
   }) {
@@ -102,6 +107,7 @@ class InvoiceItem {
       unitPrice: unitPrice ?? this.unitPrice,
       discountRate: discountRate ?? this.discountRate,
       taxRate: taxRate ?? this.taxRate,
+      currency: currency ?? this.currency,
       notes: notes ?? this.notes,
       total: total ?? this.total,
     );

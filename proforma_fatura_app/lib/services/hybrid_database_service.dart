@@ -62,7 +62,7 @@ class HybridDatabaseService {
     String path = join(await getDatabasesPath(), 'proforma_fatura_hybrid.db');
     return await openDatabase(
       path,
-      version: 13, // Incremented to trigger upgrade for company_id column
+      version: 14, // Incremented to trigger upgrade for currency columns
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -147,6 +147,7 @@ class HybridDatabaseService {
         notes TEXT,
         terms TEXT,
         discount_rate REAL DEFAULT 0.0,
+        currency TEXT NOT NULL DEFAULT 'TRY',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         firebase_synced INTEGER DEFAULT 0,
@@ -171,6 +172,7 @@ class HybridDatabaseService {
         unit_price REAL NOT NULL,
         discount_rate REAL DEFAULT 0.0,
         tax_rate REAL DEFAULT 0.0,
+        currency TEXT,
         notes TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -519,6 +521,22 @@ class HybridDatabaseService {
         }
       } catch (e) {
         debugPrint('⚠️ Error ensuring company_id in invoices: $e');
+      }
+    }
+
+    if (oldVersion < 14) {
+      // Add currency column to invoices and invoice_items tables
+      debugPrint('🔄 Adding currency columns...');
+      try {
+        if (!await _columnExists(db, 'invoices', 'currency')) {
+          await db.execute("ALTER TABLE invoices ADD COLUMN currency TEXT NOT NULL DEFAULT 'TRY'");
+        }
+        if (!await _columnExists(db, 'invoice_items', 'currency')) {
+          await db.execute("ALTER TABLE invoice_items ADD COLUMN currency TEXT");
+        }
+        debugPrint('✅ Currency columns added successfully');
+      } catch (e) {
+        debugPrint('⚠️ Error adding currency columns: $e');
       }
     }
 

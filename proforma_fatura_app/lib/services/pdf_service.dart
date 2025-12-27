@@ -458,7 +458,7 @@ class PdfService {
         pw.Padding(
           padding: const pw.EdgeInsets.all(12),
           child: pw.Text(
-            '₺${item.unitPrice.toStringAsFixed(2)}',
+            '${_getCurrencySymbol(item.currency ?? item.product?.currency ?? 'TRY')}${item.unitPrice.toStringAsFixed(2)}',
             style: pw.TextStyle(
               fontSize: 11,
               color: PdfColors.black,
@@ -496,7 +496,7 @@ class PdfService {
         pw.Padding(
           padding: const pw.EdgeInsets.all(12),
           child: pw.Text(
-            '₺${item.totalAmount.toStringAsFixed(2)}',
+            '${_getCurrencySymbol(item.currency ?? item.product?.currency ?? 'TRY')}${item.totalAmount.toStringAsFixed(2)}',
             style: pw.TextStyle(
               fontSize: 11,
               fontWeight: pw.FontWeight.bold,
@@ -529,6 +529,8 @@ class PdfService {
       (sum, item) => sum + item.totalAmount,
     );
 
+    final currencySymbol = _getCurrencySymbol(invoice.currency);
+
     return pw.Container(
       padding: const pw.EdgeInsets.all(20),
       decoration: pw.BoxDecoration(
@@ -538,13 +540,20 @@ class PdfService {
       ),
       child: pw.Column(
         children: [
-          _buildTotalRow('Ara Toplam', subtotal, font, fontBold),
-          _buildTotalRow('Toplam İskonto', totalDiscount, font, fontBold),
-          _buildTotalRow('Toplam KDV', totalTax, font, fontBold),
+          _buildTotalRow('Ara Toplam', subtotal, currencySymbol, font, fontBold),
+          _buildTotalRow(
+            'Toplam İskonto',
+            totalDiscount,
+            currencySymbol,
+            font,
+            fontBold,
+          ),
+          _buildTotalRow('Toplam KDV', totalTax, currencySymbol, font, fontBold),
           pw.Divider(color: PdfColors.grey400, thickness: 1),
           _buildTotalRow(
             'GENEL TOPLAM',
             grandTotal,
+            currencySymbol,
             font,
             fontBold,
             isGrandTotal: true,
@@ -558,6 +567,7 @@ class PdfService {
   pw.Widget _buildTotalRow(
     String label,
     double value,
+    String currencySymbol,
     pw.Font font,
     pw.Font fontBold, {
     bool isGrandTotal = false,
@@ -579,7 +589,7 @@ class PdfService {
             ),
           ),
           pw.Text(
-            '₺${value.toStringAsFixed(2)}',
+            '$currencySymbol${value.toStringAsFixed(2)}',
             style: pw.TextStyle(
               fontSize: isGrandTotal ? 14 : 11,
               fontWeight: isGrandTotal
@@ -641,5 +651,20 @@ class PdfService {
         ],
       ),
     );
+  }
+
+  String _getCurrencySymbol(String currency) {
+    switch (currency.toUpperCase()) {
+      case 'TRY':
+        return '₺';
+      case 'USD':
+        return '\$';
+      case 'EUR':
+        return '€';
+      case 'GBP':
+        return '£';
+      default:
+        return currency;
+    }
   }
 }
