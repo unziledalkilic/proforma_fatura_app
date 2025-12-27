@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -21,6 +22,7 @@ class HybridProvider extends ChangeNotifier {
   String? _error;
   DateTime? _lastSyncTime;
   Map<String, int> _syncStats = {};
+  StreamSubscription<bool>? _connectivitySubscription;
 
   // Current user
   firebase_auth.User? _currentUser;
@@ -81,6 +83,12 @@ class HybridProvider extends ChangeNotifier {
       // Initialize hybrid database service
       await _hybridService.initialize();
       _isOnline = _hybridService.isOnline;
+      
+      // Listen to connectivity changes
+      _connectivitySubscription?.cancel();
+      _connectivitySubscription = _hybridService.connectivityStream.listen((isOnline) {
+        updateConnectivity(isOnline);
+      });
 
       // Initialize Firebase service
       await _firebaseService.initialize();
@@ -88,20 +96,17 @@ class HybridProvider extends ChangeNotifier {
       // Listen to auth state changes
       _firebaseService.auth.authStateChanges().listen(
         (firebase_auth.User? user) {
-          debugPrint('🔐 Auth state değişti: ${user?.email ?? 'null'}');
           _currentUser = user;
           if (user != null) {
-            debugPrint('✅ Kullanıcı giriş yapmış: ${user.email}');
             _appUser = _convertFirebaseUserToAppUser(user);
             _loadUserData();
           } else {
-            debugPrint('❌ Kullanıcı çıkış yapmış - veriler temizleniyor');
             _clearData();
           }
           notifyListeners();
         },
         onError: (error) {
-          debugPrint('❌ Firebase Auth State Listener Error: $error');
+          print('Firebase Auth State Listener Error: $error');
         },
       );
 
@@ -130,7 +135,6 @@ class HybridProvider extends ChangeNotifier {
       companyName: null,
       phone: firebaseUser.phoneNumber,
       address: null,
-
       isActive: true,
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
@@ -204,15 +208,10 @@ class HybridProvider extends ChangeNotifier {
 
   /// Manual sync trigger for testing
   Future<void> triggerManualSync() async {
-    debugPrint('🔄 HybridProvider.triggerManualSync() called');
     try {
-      debugPrint('🔄 Calling _hybridService.triggerManualSync()...');
       await _hybridService.triggerManualSync();
-      debugPrint('✅ _hybridService.triggerManualSync() completed');
       notifyListeners();
-      debugPrint('✅ notifyListeners() called');
     } catch (e) {
-      debugPrint('❌ Manual sync error: $e');
       _setError('Manuel senkronizasyon hatası: $e');
     }
   }
@@ -222,7 +221,6 @@ class HybridProvider extends ChangeNotifier {
     try {
       // Add to local database first (works offline)
       final currentUserId = await _hybridService.getCurrentLocalUserId();
-      debugPrint('🔍 Adding customer with local user ID: $currentUserId');
 
       if (currentUserId <= 0) {
         _setError('Geçersiz kullanıcı ID: $currentUserId');
@@ -233,7 +231,6 @@ class HybridProvider extends ChangeNotifier {
       final customerId = await _hybridService.insertCustomer(enriched);
 
       if (customerId > 0) {
-        debugPrint('✅ Customer added successfully with ID: $customerId');
         // Reload customers from local database
         await _loadCustomersFromLocal();
         _setError(null);
@@ -243,7 +240,6 @@ class HybridProvider extends ChangeNotifier {
         return false;
       }
     } catch (e) {
-      debugPrint('❌ Customer addition error: $e');
       _setError('Müşteri ekleme hatası: $e');
       return false;
     } finally {
@@ -301,34 +297,22 @@ class HybridProvider extends ChangeNotifier {
   Future<bool> addProduct(Product product) async {
     _setLoading(true);
     try {
-      debugPrint('📦 Adding product: ${product.name}');
-      debugPrint('🏢 Product company ID: ${product.companyId}');
-      debugPrint('👤 Product user ID: ${product.userId}');
-
       final currentUserId = await _hybridService.getCurrentLocalUserId();
       final productWithUser = product.copyWith(
         userId: currentUserId.toString(),
       );
 
-      debugPrint(
-        '🔄 Final product data - CompanyID: ${productWithUser.companyId}, UserID: ${productWithUser.userId}',
-      );
-
       final productId = await _hybridService.insertProduct(productWithUser);
 
       if (productId > 0) {
-        debugPrint('✅ Product added successfully with ID: $productId');
         await _loadProductsFromLocal();
-        debugPrint('📊 Products reloaded - total count: ${_products.length}');
         _setError(null);
         return true;
       } else {
-        debugPrint('❌ Failed to insert product');
         _setError('Ürün eklenemedi');
         return false;
       }
     } catch (e) {
-      debugPrint('❌ Product add error: $e');
       _setError('Ürün ekleme hatası: $e');
       return false;
     } finally {
@@ -492,21 +476,16 @@ class HybridProvider extends ChangeNotifier {
 
   Future<void> loadCompanyProfiles() async {
     try {
-      debugPrint('🔍 Şirket profilleri yükleniyor...');
-
       // Initialize empty list first to prevent null issues
       _companies = [];
 
       // 1) Local first - with more safety checks
       final localUserId = _appUser?.id;
-      debugPrint('🔍 Local user ID: $localUserId');
 
       List<CompanyInfo> local = [];
       try {
         local = await _hybridService.getAllCompanyProfiles(userId: localUserId);
-        debugPrint('📊 Local şirket sayısı: ${local.length}');
       } catch (e) {
-        debugPrint('⚠️ Local şirket profilleri yüklenemedi: $e');
         local = [];
       }
 
@@ -518,9 +497,7 @@ class HybridProvider extends ChangeNotifier {
           remote = await _firebaseService.getCompanyProfiles().timeout(
             const Duration(seconds: 10),
           );
-          debugPrint('📊 Remote şirket sayısı: ${remote.length}');
         } catch (e) {
-          debugPrint('⚠️ Remote şirket profilleri yüklenemedi: $e');
           remote = [];
         }
       }
@@ -557,23 +534,17 @@ class HybridProvider extends ChangeNotifier {
       try {
         _companies.sort((a, b) => a.name.compareTo(b.name));
       } catch (e) {
-        debugPrint('⚠️ Sort error: $e');
         // Keep unsorted if sort fails
       }
-
-      debugPrint('✅ Toplam şirket sayısı: ${_companies.length}');
 
       // Safe selection (auto-select first if exists)
       if (_selectedCompany == null && _companies.isNotEmpty) {
         _selectedCompany = _companies.first;
-        debugPrint('✅ Seçili şirket: ${_selectedCompany?.name}');
       }
 
       // Notify listeners at the end
       notifyListeners();
-    } catch (e, stackTrace) {
-      debugPrint('❌ Şirket profilleri yüklenemedi: $e');
-      debugPrint('❌ Stack trace: $stackTrace');
+    } catch (e) {
       _setError('Şirket profilleri yüklenemedi: $e');
 
       // Ensure _companies is always initialized
@@ -588,26 +559,20 @@ class HybridProvider extends ChangeNotifier {
   Future<bool> addCompanyProfile(CompanyInfo company) async {
     _setLoading(true);
     try {
-      debugPrint('📝 Şirket ekleniyor: ${company.name}');
-
       // 1) Local insert (offline-first)
       final localId = await _hybridService.insertCompanyProfile(company);
-      debugPrint('✅ Şirket SQLite\'a eklendi, ID: $localId');
 
       if (localId > 0) {
         // 2) Refresh list to include the new company
         await loadCompanyProfiles();
-        debugPrint('📊 Şirket listesi yenilendi: ${_companies.length} şirket');
         _setError(null);
         return true;
       } else {
         _setError('Şirket SQLite\'a eklenemedi');
-        debugPrint('❌ Şirket SQLite\'a eklenemedi');
         return false;
       }
     } catch (e) {
       _setError('Şirket eklenemedi: $e');
-      debugPrint('❌ Şirket ekleme hatası: $e');
       return false;
     } finally {
       _setLoading(false);
@@ -691,10 +656,9 @@ class HybridProvider extends ChangeNotifier {
           'createdAt': FieldValue.serverTimestamp(),
           'lastLogin': FieldValue.serverTimestamp(),
         });
-        debugPrint('✅ Firestore kullanıcı dokümanı oluşturuldu');
       }
     } catch (e) {
-      debugPrint('⚠️ Firestore kullanıcı dokümanı oluşturulamadı: $e');
+      // Ignore Firestore errors
     }
   }
 
@@ -722,28 +686,17 @@ class HybridProvider extends ChangeNotifier {
             updatedUser.phone != _appUser!.phone ||
             updatedUser.address != _appUser!.address) {
           _appUser = updatedUser;
-          debugPrint('✅ Kullanıcı profili Firestore\'dan güncellendi');
           notifyListeners();
         }
       }
     } catch (e) {
-      debugPrint('⚠️ Firestore\'dan profil güncellenemedi: $e');
+      // Ignore Firestore errors
     }
   }
 
   // ==================== DATA LOADING ====================
 
   Future<void> _loadUserData() async {
-    debugPrint('🔄 Kullanıcı verileri yükleniyor...');
-    try {
-      debugPrint(
-        '👤 FirebaseUser: ${_currentUser?.uid} / ${_currentUser?.email}',
-      );
-      debugPrint(
-        '🧑‍💻 AppUser: id=${_appUser?.id} name=${_appUser?.fullName} phone=${_appUser?.phone}',
-      );
-    } catch (_) {}
-
     // Firestore kullanıcı kaydını garanti altına al
     await _ensureFirestoreUserDocument();
 
@@ -752,7 +705,6 @@ class HybridProvider extends ChangeNotifier {
 
     // Kullanıcı ID'si yoksa Firebase sync yap
     if (_appUser?.id == null) {
-      debugPrint('⚠️ Kullanıcı ID bulunamadı - Firebase sync yapılıyor');
       // Sonsuz döngü olmaması için _loadUserData'ya tekrar çağrı yapmıyoruz
       await _syncFromFirebaseOnLogin();
       return;
@@ -766,14 +718,9 @@ class HybridProvider extends ChangeNotifier {
       loadCompanyProfiles(), // Güvenli hale getirildi
     ]);
 
-    debugPrint(
-      '📊 Yerel veriler: ${_customers.length} müşteri, ${_products.length} ürün, ${_invoices.length} fatura',
-    );
-
     // Eğer yerel veriler boş ise veya online ise Firebase'den sync yap
     if ((_customers.isEmpty || _products.isEmpty || _invoices.isEmpty) &&
         _isOnline) {
-      debugPrint('🔄 Firebase\'den senkronizasyon başlatılıyor...');
       await _syncFromFirebaseOnLogin();
     }
   }
@@ -781,20 +728,16 @@ class HybridProvider extends ChangeNotifier {
   Future<void> _loadCustomersFromLocal() async {
     try {
       final userId = _appUser?.id;
-      debugPrint('🔍 Müşteriler SQLite\'dan yükleniyor... UserID: $userId');
 
       // Safety check to prevent crashes if appUser is null
       if (userId == null) {
-        debugPrint('⚠️ User ID is null, skipping customer load');
         return;
       }
 
       final customers = await _hybridService.getAllCustomers(userId: userId);
       _customers = _dedupCustomers(customers);
-      debugPrint('✅ SQLite\'dan ${_customers.length} müşteri yüklendi');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Müşteri yükleme hatası: $e');
       _setError('Müşteriler yüklenemedi: $e');
     }
   }
@@ -803,20 +746,16 @@ class HybridProvider extends ChangeNotifier {
   Future<void> _loadProductsFromLocal() async {
     try {
       final userId = _appUser?.id;
-      debugPrint('🔍 Ürünler SQLite\'dan yükleniyor... UserID: $userId');
 
       // Safety check to prevent crashes if appUser is null
       if (userId == null) {
-        debugPrint('⚠️ User ID is null, skipping product load');
         return;
       }
 
       final products = await _hybridService.getAllProducts(userId: userId);
       _products = products;
-      debugPrint('✅ SQLite\'dan ${products.length} ürün yüklendi');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error loading products from local: $e');
       _setError('Ürünler yüklenirken hata: $e');
     }
   }
@@ -825,13 +764,9 @@ class HybridProvider extends ChangeNotifier {
   Future<void> loadProductsForCompany(String companyId) async {
     try {
       final userId = _appUser?.id;
-      debugPrint(
-        '🔍 Şirket ürünleri SQLite\'dan yükleniyor... UserID: $userId, CompanyID: $companyId',
-      );
 
       // Safety check to prevent crashes if appUser is null
       if (userId == null) {
-        debugPrint('⚠️ User ID is null, skipping company product load');
         return;
       }
 
@@ -839,10 +774,8 @@ class HybridProvider extends ChangeNotifier {
       _products = allProducts
           .where((product) => product.companyId == companyId)
           .toList();
-      debugPrint('✅ SQLite\'dan ${_products.length} şirket ürünü yüklendi');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error loading company products from local: $e');
       _setError('Şirket ürünleri yüklenirken hata: $e');
     }
   }
@@ -851,13 +784,9 @@ class HybridProvider extends ChangeNotifier {
   Future<void> loadInvoicesForCompany(String companyId) async {
     try {
       final userId = _appUser?.id;
-      debugPrint(
-        '🔍 Şirket faturaları SQLite\'dan yükleniyor... UserID: $userId, CompanyID: $companyId',
-      );
 
       // Safety check to prevent crashes if appUser is null
       if (userId == null) {
-        debugPrint('⚠️ User ID is null, skipping company invoice load');
         return;
       }
 
@@ -865,10 +794,8 @@ class HybridProvider extends ChangeNotifier {
       _invoices = allInvoices
           .where((invoice) => invoice.companyId == companyId)
           .toList();
-      debugPrint('✅ SQLite\'dan ${_invoices.length} şirket fatura yüklendi');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Error loading company invoices from local: $e');
       _setError('Şirket faturaları yüklenirken hata: $e');
     }
   }
@@ -876,13 +803,10 @@ class HybridProvider extends ChangeNotifier {
   Future<void> _loadInvoicesFromLocal() async {
     try {
       final userId = _appUser?.id;
-      debugPrint('🔍 Faturalar SQLite\'dan yükleniyor... UserID: $userId');
       final invoices = await _hybridService.getAllInvoices(userId: userId);
       _invoices = _dedupInvoices(invoices);
-      debugPrint('✅ SQLite\'dan ${_invoices.length} fatura yüklendi');
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Fatura yükleme hatası: $e');
       _setError('Faturalar yüklenemedi: $e');
     }
   }
@@ -932,36 +856,21 @@ class HybridProvider extends ChangeNotifier {
       _syncStats = await _hybridService.getSyncStats();
       notifyListeners();
     } catch (e) {
-      debugPrint('Sync stats update error: $e');
+      // Ignore sync stats errors
     }
   }
 
   /// Firebase'den ilk giriş senkronizasyonu
   Future<void> _syncFromFirebaseOnLogin() async {
     if (!_isOnline || _currentUser == null) {
-      debugPrint('❌ Offline veya kullanıcı yok - Firebase sync atlanıyor');
       return;
     }
 
     try {
-      debugPrint('🔄 Firebase\'den veriler çekiliyor...');
-
       // Firebase'den verileri çek
       final firebaseCustomers = await _firebaseService.getCustomers();
       final firebaseProducts = await _firebaseService.getProducts();
       final firebaseInvoices = await _firebaseService.getInvoices();
-
-      debugPrint(
-        '📥 Firebase\'den alınan: ${firebaseCustomers.length} müşteri, ${firebaseProducts.length} ürün, ${firebaseInvoices.length} fatura',
-      );
-
-      // Kullanıcı ID'sini SQLite'dan al - getUserByEmail metodu yok, bu kısmı kaldırıyorum
-      // _appUser.id zaten _convertFirebaseUserToAppUser'da null olarak set edildi
-      // Veri yükleme sırasında otomatik olarak güncellenecek
-
-      // Verileri yerel listeye ekle (SQLite sync HybridService'de yapılacak)
-      // Bu kısmı kaldırıyoruz çünkü artık SQLite'dan yüklüyoruz
-      debugPrint('📝 Veriler SQLite\'dan yüklenecek...');
 
       // Hybrid service ile SQLite'a da sync yap
       await _hybridService.performManualSync();
@@ -970,7 +879,6 @@ class HybridProvider extends ChangeNotifier {
       if (_appUser != null && _appUser!.id == null) {
         final localUserId = await _hybridService.getCurrentLocalUserId();
         _appUser = _appUser!.copyWith(id: localUserId);
-        debugPrint('✅ Kullanıcı ID set edildi (SQLite): ${_appUser?.id}');
       }
 
       // Kullanıcı ID'si set edildikten sonra verileri yükle
@@ -979,10 +887,7 @@ class HybridProvider extends ChangeNotifier {
         _loadProductsFromLocal(),
         _loadInvoicesFromLocal(),
       ]);
-
-      debugPrint('✅ Firebase sync tamamlandı');
     } catch (e) {
-      debugPrint('❌ Firebase sync hatası: $e');
       _setError('Veriler yüklenirken hata oluştu: $e');
     }
   }
@@ -1000,20 +905,64 @@ class HybridProvider extends ChangeNotifier {
   }
 
   void _clearData() {
-    debugPrint('🧹 Tüm veriler temizleniyor...');
-    debugPrint(
-      '📊 Temizlenmeden önce: ${_customers.length} müşteri, ${_products.length} ürün, ${_invoices.length} fatura',
-    );
+    try {
+      // Güvenli temizleme işlemleri
+      _appUser = null;
 
-    _appUser = null;
-    _customers.clear();
-    _products.clear();
-    _invoices.clear();
-    _companyInfo = null;
-    _syncStats.clear();
+      // Listeleri güvenli şekilde temizle
+      try {
+        if (_customers.isNotEmpty) {
+          _customers.clear();
+        }
+      } catch (e) {
+        _customers = [];
+      }
 
-    debugPrint('✅ Veriler temizlendi');
-    notifyListeners();
+      try {
+        if (_products.isNotEmpty) {
+          _products.clear();
+        }
+      } catch (e) {
+        _products = [];
+      }
+
+      try {
+        if (_invoices.isNotEmpty) {
+          _invoices.clear();
+        }
+      } catch (e) {
+        _invoices = [];
+      }
+
+      _companyInfo = null;
+
+      // Sync stats'i güvenli şekilde temizle
+      try {
+        if (_syncStats.isNotEmpty) {
+          _syncStats.clear();
+        }
+      } catch (e) {
+        _syncStats = {};
+      }
+
+      // UI'ı güncelle
+      notifyListeners();
+    } catch (e) {
+      // Hata olsa bile temel temizleme işlemlerini yap
+      try {
+        _appUser = null;
+        _customers = [];
+        _products = [];
+        _invoices = [];
+        _companyInfo = null;
+        _syncStats = {};
+
+        notifyListeners();
+      } catch (finalError) {
+        // Son çare - hiçbir şey yapma, sadece log'da tut
+        print('Critical error in _clearData: $finalError');
+      }
+    }
   }
 
   void clearError() {
@@ -1068,7 +1017,6 @@ class HybridProvider extends ChangeNotifier {
       'total_customers': _customers.length,
       'total_products': _products.length,
       'total_invoices': _invoices.length,
-
       'is_online': _isOnline,
       'last_sync': _lastSyncTime?.toIso8601String(),
       'pending_sync_count': pendingSyncCount,
@@ -1114,58 +1062,7 @@ class HybridProvider extends ChangeNotifier {
 
   /// Manuel Firebase sync (test için)
   Future<void> forceFirebaseSync() async {
-    debugPrint('🔄 Manuel Firebase sync başlatılıyor...');
     await _syncFromFirebaseOnLogin();
-  }
-
-  /// Firebase verilerini kontrol et (debug)
-  Future<void> inspectFirebaseData() async {
-    if (!_isOnline || _currentUser == null) {
-      debugPrint('❌ Offline veya kullanıcı yok');
-      return;
-    }
-
-    try {
-      debugPrint('🔍 Firebase verileri kontrol ediliyor...');
-
-      // Raw Firebase verilerini çek
-      final customers = await _firebaseService.getCustomers();
-      final products = await _firebaseService.getProducts();
-      final invoices = await _firebaseService.getInvoices();
-
-      debugPrint('📊 Firebase Veri Yapısı:');
-      debugPrint('==================');
-
-      if (customers.isNotEmpty) {
-        final firstCustomer = customers.first;
-        debugPrint('👤 İlk Müşteri:');
-        debugPrint('  - ID: ${firstCustomer.id}');
-        debugPrint('  - UserID: ${firstCustomer.userId}');
-        debugPrint('  - Name: ${firstCustomer.name}');
-        debugPrint('  - Raw Map: ${firstCustomer.toMap()}');
-      }
-
-      if (products.isNotEmpty) {
-        final firstProduct = products.first;
-        debugPrint('🛍️ İlk Ürün:');
-        debugPrint('  - ID: ${firstProduct.id}');
-        debugPrint('  - UserID: ${firstProduct.userId}');
-        debugPrint('  - Name: ${firstProduct.name}');
-        debugPrint('  - Raw Map: ${firstProduct.toMap()}');
-      }
-
-      if (invoices.isNotEmpty) {
-        final firstInvoice = invoices.first;
-        debugPrint('📄 İlk Fatura:');
-        debugPrint('  - ID: ${firstInvoice.id}');
-        debugPrint('  - Number: ${firstInvoice.invoiceNumber}');
-        debugPrint('  - Customer ID: ${firstInvoice.customer.id}');
-      }
-
-      debugPrint('==================');
-    } catch (e) {
-      debugPrint('❌ Firebase veri kontrolü hatası: $e');
-    }
   }
 
   /// Search invoices (compatibility method)
@@ -1203,9 +1100,7 @@ class HybridProvider extends ChangeNotifier {
                 'updatedAt': FieldValue.serverTimestamp(),
               });
         } catch (firestoreError) {
-          debugPrint(
-            'Firestore güncelleme hatası (kritik değil): $firestoreError',
-          );
+          // Ignore Firestore errors
         }
 
         // Update local user data
@@ -1228,19 +1123,27 @@ class HybridProvider extends ChangeNotifier {
   Future<void> logout() async {
     try {
       _setLoading(true);
-      debugPrint('🚪 Çıkış işlemi başlatılıyor...');
 
       // Firebase'den çıkış yap
-      await _firebaseService.auth.signOut();
-      debugPrint('✅ Firebase çıkışı tamamlandı');
+      try {
+        await _firebaseService.auth.signOut();
+      } catch (e) {
+        // Firebase çıkış hatası kritik değil, devam et
+        print('Firebase logout error (non-critical): $e');
+      }
 
       // Tüm verileri temizle
       _clearData();
-      debugPrint('✅ Çıkış işlemi tamamlandı');
     } catch (e) {
-      debugPrint('❌ Çıkış hatası: $e');
+      print('Logout error: $e');
       _setError('Çıkış yapılamadı: $e');
-      rethrow; // Hatayı yeniden fırlat ki UI'da yakalanabilsin
+
+      // Hata olsa bile verileri temizlemeye çalış
+      try {
+        _clearData();
+      } catch (clearError) {
+        print('Data cleanup error: $clearError');
+      }
     } finally {
       _setLoading(false);
     }
@@ -1325,6 +1228,7 @@ class HybridProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _connectivitySubscription?.cancel();
     _hybridService.dispose();
     super.dispose();
   }

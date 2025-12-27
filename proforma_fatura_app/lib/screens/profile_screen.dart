@@ -192,21 +192,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (confirmed == true && mounted) {
       try {
+        // Loading göster
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Çıkış yapılıyor...'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Provider'dan logout çağır
         await context.read<HybridProvider>().logout();
+        
+        // Başarılı çıkış sonrası login ekranına yönlendir
         if (mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/login',
             (route) => false,
           );
         }
       } catch (e) {
+        // Hata durumunda bile login ekranına yönlendir
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Çıkış yapılırken hata oluştu: $e'),
+              content: Text('Çıkış hatası: $e'),
               backgroundColor: AppConstants.errorColor,
             ),
           );
+          
+          // Hata olsa bile login ekranına yönlendir
+          await Future.delayed(const Duration(seconds: 2));
+          if (mounted) {
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/login',
+              (route) => false,
+            );
+          }
         }
       }
     }

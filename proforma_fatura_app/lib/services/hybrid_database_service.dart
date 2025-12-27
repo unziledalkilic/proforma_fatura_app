@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:http/http.dart' as http;
 import '../models/customer.dart';
 import '../models/product.dart';
 import '../models/invoice.dart';
@@ -25,6 +27,9 @@ class HybridDatabaseService {
   static Database? _database;
   final FirebaseService _firebaseService = FirebaseService();
   bool _isOnline = false;
+  final _connectivityStreamController = StreamController<bool>.broadcast();
+  Stream<bool> get connectivityStream => _connectivityStreamController.stream;
+
   bool _pullEnabled = false; // SQLite birincil; Firebase çekme isteğe bağlı
   Timer? _syncTimer;
   Timer? _debounceSync;
@@ -57,7 +62,7 @@ class HybridDatabaseService {
     String path = join(await getDatabasesPath(), 'proforma_fatura_hybrid.db');
     return await openDatabase(
       path,
-      version: 12, // Added company_id to invoices table
+      version: 13, // Incremented to trigger upgrade for company_id column
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -136,6 +141,7 @@ class HybridDatabaseService {
         user_id INTEGER,
         invoice_number TEXT NOT NULL,
         customer_id INTEGER,
+        company_id TEXT,
         invoice_date TEXT NOT NULL,
         due_date TEXT NOT NULL,
         notes TEXT,
@@ -146,8 +152,7 @@ class HybridDatabaseService {
         firebase_synced INTEGER DEFAULT 0,
         last_sync_time TEXT,
         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-        FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE,
-        company_id TEXT
+        FOREIGN KEY (customer_id) REFERENCES customers (id) ON DELETE CASCADE
       )
     ''');
     // Benzersiz fatura numarası (kullanıcı + fatura no)
@@ -225,6 +230,21 @@ class HybridDatabaseService {
     await _createIndexes(db);
   }
 
+  /// Check if a column exists in a table
+  Future<bool> _columnExists(
+    Database db,
+    String tableName,
+    String columnName,
+  ) async {
+    try {
+      final result = await db.rawQuery('PRAGMA table_info($tableName)');
+      return result.any((column) => column['name'] == columnName);
+    } catch (e) {
+      debugPrint('❌ Error checking column existence: $e');
+      return false;
+    }
+  }
+
   Future<void> _createIndexes(Database db) async {
     // Firebase ID indeksleri
     await db.execute(
@@ -272,20 +292,32 @@ class HybridDatabaseService {
     await db.execute(
       'CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_user_email ON customers(user_id, email)',
     );
-    await db.execute(
-      'CREATE UNIQUE INDEX IF NOT EXISTS ux_products_user_company_barcode ON products(user_id, company_id, barcode)',
-    );
-    // İsim bazlı ürün unique (barcode yoksa) – NULL değerler unique'i bozmaz
-    await db.execute(
-      'CREATE UNIQUE INDEX IF NOT EXISTS ux_products_user_company_name ON products(user_id, company_id, name)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_products_company_id ON products(company_id)',
-    );
-    // Create index for invoices company_id
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_invoices_company_id ON invoices(company_id)',
-    );
+
+    // Products company_id index - check if column exists first
+    if (await _columnExists(db, 'products', 'company_id')) {
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS ux_products_user_company_barcode ON products(user_id, company_id, barcode)',
+      );
+      // İsim bazlı ürün unique (barcode yoksa) – NULL değerler unique'i bozmaz
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS ux_products_user_company_name ON products(user_id, company_id, name)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_products_company_id ON products(company_id)',
+      );
+    }
+
+    // Create index for invoices company_id - check if column exists first
+    if (await _columnExists(db, 'invoices', 'company_id')) {
+      try {
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_invoices_company_id ON invoices(company_id)',
+        );
+      } catch (e) {
+        debugPrint('⚠️ Could not create idx_invoices_company_id: $e');
+        // Column might not exist yet, skip this index
+      }
+    }
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -458,11 +490,36 @@ class HybridDatabaseService {
       // Add company_id to invoices table
       try {
         await db.execute('ALTER TABLE invoices ADD COLUMN company_id TEXT');
-      } catch (_) {}
-      // Create index for invoices company_id
-      await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_invoices_company_id ON invoices(company_id)',
-      );
+        // Create index for invoices company_id only if column was added successfully
+        if (await _columnExists(db, 'invoices', 'company_id')) {
+          await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_invoices_company_id ON invoices(company_id)',
+          );
+        }
+      } catch (e) {
+        debugPrint('⚠️ Could not add company_id to invoices: $e');
+      }
+    }
+
+    if (oldVersion < 13) {
+      // Ensure company_id column exists in invoices table (double-check)
+      try {
+        if (!await _columnExists(db, 'invoices', 'company_id')) {
+          await db.execute('ALTER TABLE invoices ADD COLUMN company_id TEXT');
+        }
+        // Ensure index exists only if column exists
+        if (await _columnExists(db, 'invoices', 'company_id')) {
+          try {
+            await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_invoices_company_id ON invoices(company_id)',
+            );
+          } catch (e) {
+            debugPrint('⚠️ Could not create idx_invoices_company_id index: $e');
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Error ensuring company_id in invoices: $e');
+      }
     }
 
     // deleted_records tablosu bazı sürümlerde eksik olabilir - garanti altına al
@@ -486,26 +543,63 @@ class HybridDatabaseService {
     } catch (_) {}
   }
 
-  /// Connectivity check
+  /// Connectivity check - checks both network connection and actual internet access
   Future<void> _checkConnectivity() async {
+    final wasOnline = _isOnline;
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
-      _isOnline = connectivityResult != ConnectivityResult.none;
+      
+      bool hasNetwork = false;
+      if (connectivityResult is List) {
+        hasNetwork = !connectivityResult.contains(ConnectivityResult.none);
+      } else if (connectivityResult is ConnectivityResult) {
+        hasNetwork = connectivityResult != ConnectivityResult.none;
+      }
+
+      if (!hasNetwork) {
+        _isOnline = false;
+      } else {
+        // Check actual internet access by trying to reach a reliable server
+        try {
+          final response = await http
+              .get(Uri.parse('https://www.google.com'))
+              .timeout(const Duration(seconds: 10)); // Increased timeout
+          _isOnline = response.statusCode == 200;
+        } catch (e) {
+          // If Google is blocked, try Firebase
+          try {
+            final response = await http
+                .get(Uri.parse('https://firebase.googleapis.com'))
+                .timeout(const Duration(seconds: 10));
+            _isOnline = response.statusCode == 200 || response.statusCode == 404;
+          } catch (e2) {
+            // No actual internet access
+            _isOnline = false;
+            debugPrint('⚠️ No internet access: $e2');
+          }
+        }
+      }
     } catch (e) {
       _isOnline = false;
+      debugPrint('⚠️ Connectivity check error: $e');
+    }
+
+    // Notify listeners
+    _connectivityStreamController.add(_isOnline);
+
+    // Trigger sync if went online
+    if (!wasOnline && _isOnline) {
+      debugPrint('🌐 Back online - triggering sync');
+      _performFullSync();
     }
   }
 
   /// Start connectivity listener
   void _startConnectivityListener() {
-    Connectivity().onConnectivityChanged.listen((ConnectivityResult result) {
-      bool wasOnline = _isOnline;
-      _isOnline = result != ConnectivityResult.none;
-
-      if (!wasOnline && _isOnline) {
-        // Went from offline to online - trigger sync
-        _performFullSync();
-      }
+    Connectivity().onConnectivityChanged.listen((result) {
+       // Re-check actual connectivity when network state changes
+       debugPrint('📡 Network state changed: $result');
+       _checkConnectivity();
     });
   }
 
@@ -546,6 +640,7 @@ class HybridDatabaseService {
   void dispose() {
     _syncTimer?.cancel();
     _debounceSync?.cancel();
+    _connectivityStreamController.close();
     _syncTimer = null;
     _debounceSync = null;
     _isSyncInProgress = false;

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:http/http.dart' as http;
 import '../models/customer.dart';
 import '../models/product.dart';
 import '../models/invoice.dart';
@@ -37,13 +38,39 @@ class FirebaseService {
     _lastSyncTime = DateTime.now();
   }
 
-  // Check internet connectivity
+  // Check internet connectivity - checks both network connection and actual internet access
   Future<void> _checkConnectivity() async {
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
-      _isOnline = connectivityResult != ConnectivityResult.none;
+      final hasNetwork = connectivityResult != ConnectivityResult.none;
+      
+      if (!hasNetwork) {
+        _isOnline = false;
+        return;
+      }
+      
+      // Check actual internet access by trying to reach a reliable server
+      try {
+        final response = await http
+            .get(Uri.parse('https://www.google.com'))
+            .timeout(const Duration(seconds: 5));
+        _isOnline = response.statusCode == 200;
+      } catch (e) {
+        // If Google is blocked, try Firebase
+        try {
+          final response = await http
+              .get(Uri.parse('https://firebase.googleapis.com'))
+              .timeout(const Duration(seconds: 5));
+          _isOnline = response.statusCode == 200 || response.statusCode == 404;
+        } catch (e2) {
+          // No actual internet access
+          _isOnline = false;
+          debugPrint('⚠️ No internet access: $e2');
+        }
+      }
     } catch (e) {
       _isOnline = false;
+      debugPrint('⚠️ Connectivity check error: $e');
     }
   }
 
